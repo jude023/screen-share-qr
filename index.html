@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Screen Share via QR Code</title>
+    <title>Screen Share via QR - WebRTC</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.4.1/dist/peerjs.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -119,6 +120,15 @@
             background: #ff5252;
         }
 
+        .btn-success {
+            background: #51cf66;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #40c057;
+        }
+
         #qrCode {
             background: white;
             padding: 20px;
@@ -128,8 +138,9 @@
             border: 2px solid #667eea;
         }
 
-        #qrCode canvas {
+        #qrCode canvas, #qrCode img {
             display: block;
+            max-width: 100%;
         }
 
         .session-info {
@@ -153,6 +164,7 @@
             word-break: break-all;
             color: #667eea;
             font-weight: bold;
+            font-size: 0.9em;
         }
 
         .screens-grid {
@@ -189,6 +201,18 @@
             z-index: 10;
         }
 
+        .screen-status {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: #51cf66;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.8em;
+            z-index: 10;
+        }
+
         .screen-remove {
             position: absolute;
             top: 10px;
@@ -212,6 +236,7 @@
             border-radius: 8px;
             margin-bottom: 15px;
             font-weight: 500;
+            display: none;
         }
 
         .status.info {
@@ -226,10 +251,20 @@
             border-left: 4px solid #2e7d32;
         }
 
+        .status.warning {
+            background: #fff3e0;
+            color: #f57c00;
+            border-left: 4px solid #f57c00;
+        }
+
         .status.error {
             background: #ffebee;
             color: #c62828;
             border-left: 4px solid #c62828;
+        }
+
+        .status.show {
+            display: block;
         }
 
         .connected-count {
@@ -249,6 +284,7 @@
             margin: 15px 0;
             color: #333;
             line-height: 1.6;
+            font-size: 0.95em;
         }
 
         .instructions ol {
@@ -284,120 +320,239 @@
         .copy-btn:hover {
             background: #764ba2;
         }
+
+        .peer-id-display {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-family: monospace;
+            font-size: 0.85em;
+            word-break: break-all;
+            color: #667eea;
+        }
+
+        #sharerPage {
+            display: none;
+        }
+
+        .sharer-container {
+            padding: 20px;
+            background: #f0f0f0;
+            min-height: 100vh;
+        }
+
+        .sharer-card {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+
+        .sharer-video {
+            background: #000;
+            border-radius: 10px;
+            aspect-ratio: 16/9;
+            margin: 20px 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .sharer-video video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 600;
+            margin: 10px 0;
+        }
+
+        .status-badge.connecting {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+
+        .status-badge.connected {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .status-badge.error {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>📱 Screen Share via QR</h1>
-            <p>Generate QR code and view screens from any device</p>
-        </div>
-
-        <div class="main-layout">
-            <!-- LEFT PANEL: QR CODE GENERATOR -->
-            <div class="panel">
-                <h2>🔐 Your QR Code</h2>
-                
-                <div class="button-group">
-                    <button class="btn-primary" onclick="generateNewSession()">🆕 New Session</button>
-                    <button class="btn-secondary" onclick="copySessionId()">📋 Copy ID</button>
-                </div>
-
-                <div id="status" class="status info" style="display:none;"></div>
-
-                <div class="session-info">
-                    <p><strong>Session ID:</strong></p>
-                    <div class="session-id" id="sessionId">Click "New Session" to start</div>
-                </div>
-
-                <div id="qrCode"></div>
-
-                <div class="instructions">
-                    <strong>📋 How to use:</strong>
-                    <ol>
-                        <li>Click "New Session" to generate a QR code</li>
-                        <li>Send the QR code or Session ID to others</li>
-                        <li>They scan the QR code on their device</li>
-                        <li>They click "Share Screen" and allow access</li>
-                        <li>You'll see their screen appear here!</li>
-                    </ol>
-                </div>
-
-                <div class="connected-count">
-                    Connected Devices: <span id="deviceCount">0</span>
-                </div>
-
-                <button class="btn-danger" onclick="clearAllScreens()" style="width: 100%; margin-top: 20px;">🗑️ Clear All Screens</button>
+    <!-- VIEWER PAGE -->
+    <div id="viewerPage">
+        <div class="container">
+            <div class="header">
+                <h1>📱 Screen Share via QR</h1>
+                <p>Real WebRTC P2P screen sharing</p>
             </div>
 
-            <!-- RIGHT PANEL: SCREENS DISPLAY -->
-            <div class="panel">
-                <h2>👀 Connected Screens</h2>
-                
-                <div id="screensContainer" class="screens-grid">
-                    <div class="empty-state">
-                        <div class="empty-state-icon">🖥️</div>
-                        <p>No screens connected yet</p>
-                        <p style="font-size: 0.9em; color: #bbb;">Waiting for devices to scan and share...</p>
+            <div class="main-layout">
+                <!-- LEFT PANEL -->
+                <div class="panel">
+                    <h2>🔐 Your Session</h2>
+                    
+                    <div class="button-group">
+                        <button class="btn-primary" onclick="createNewSession()">🆕 New Session</button>
+                        <button class="btn-secondary" onclick="copySessionUrl()">📋 Copy URL</button>
+                    </div>
+
+                    <div id="viewerStatus" class="status"></div>
+
+                    <div class="session-info">
+                        <p><strong>Session ID:</strong></p>
+                        <div class="session-id" id="sessionId">Click "New Session"</div>
+                        <p style="margin-top: 12px; font-size: 0.9em;"><strong>Your Peer ID:</strong></p>
+                        <div class="peer-id-display" id="peerId">Connecting...</div>
+                    </div>
+
+                    <div id="qrCode"></div>
+
+                    <div class="instructions">
+                        <strong>📋 Steps:</strong>
+                        <ol>
+                            <li>Click "New Session"</li>
+                            <li>Share QR code with others</li>
+                            <li>They scan & share their screen</li>
+                            <li>Watch their screen in real-time!</li>
+                        </ol>
+                    </div>
+
+                    <div class="connected-count">
+                        Connected: <span id="deviceCount">0</span>
+                    </div>
+
+                    <button class="btn-danger" onclick="disconnectAll()" style="width: 100%; margin-top: 20px;">🗑️ Disconnect All</button>
+                </div>
+
+                <!-- RIGHT PANEL -->
+                <div class="panel">
+                    <h2>👀 Live Screens</h2>
+                    
+                    <div id="screensContainer" class="screens-grid">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">🖥️</div>
+                            <p>No screens connected yet</p>
+                            <p style="font-size: 0.9em; color: #bbb;">Waiting for screens to share...</p>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- HIDDEN: Screen Sharing Page (for scanners) -->
-    <div id="sharerPage" style="display: none;">
-        <div style="padding: 20px; background: #f0f0f0; min-height: 100vh;">
-            <div style="max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 15px;">
+    <!-- SHARER PAGE -->
+    <div id="sharerPage">
+        <div class="sharer-container">
+            <div class="sharer-card">
                 <h2 style="color: #333; margin-bottom: 20px;">📱 Share Your Screen</h2>
                 
-                <div id="sharerStatus" class="status info" style="margin-bottom: 20px;"></div>
+                <div id="sharerStatus" class="status show info"></div>
                 
                 <div style="margin: 20px 0;">
-                    <p style="color: #666; margin-bottom: 10px;"><strong>Session ID:</strong></p>
-                    <div style="background: #f5f5f5; padding: 12px; border-radius: 8px; word-break: break-all; font-family: monospace;" id="sharerSessionId">-</div>
+                    <p style="color: #666; margin-bottom: 10px;"><strong>Connected to Viewer:</strong></p>
+                    <div class="peer-id-display" id="sharerViewerId">-</div>
+                </div>
+
+                <div id="connectionStatus" class="status-badge connecting">
+                    <span class="loading-spinner"></span>Connecting...
                 </div>
 
                 <button class="btn-primary" id="shareScreenBtn" onclick="startScreenShare()" style="width: 100%; padding: 15px; font-size: 1.1em; margin: 20px 0;">🎥 Start Sharing</button>
 
-                <div id="sharerVideoContainer" style="background: #000; border-radius: 10px; aspect-ratio: 16/9; margin: 20px 0; display: none; position: relative;">
-                    <video id="sharerVideo" style="width: 100%; height: 100%; object-fit: contain;"></video>
-                    <button class="btn-danger" id="stopShareBtn" onclick="stopScreenShare()" style="position: absolute; bottom: 10px; right: 10px; padding: 10px 15px;">⏹️ Stop</button>
+                <div id="sharerVideoContainer" style="display: none;">
+                    <div class="sharer-video">
+                        <video id="sharerVideo" playsinline></video>
+                    </div>
+                    <button class="btn-danger" id="stopShareBtn" onclick="stopScreenShare()" style="width: 100%; padding: 12px;">⏹️ Stop Sharing</button>
                 </div>
 
-                <button class="btn-secondary" onclick="goBackToQR()" style="width: 100%; padding: 12px;">← Back to QR Code</button>
+                <button class="btn-secondary" onclick="goBackToQR()" style="width: 100%; padding: 12px; margin-top: 10px;">← Back</button>
             </div>
         </div>
     </div>
 
     <script>
+        let peer;
+        let myPeerId;
         let currentSessionId = null;
-        let connectedScreens = new Map();
-        let isSharing = false;
-        let screenStream = null;
+        let connectedPeers = new Map();
+        let isSharer = false;
+        let currentScreen = null;
 
-        // Check if we're accessing via URL parameter
-        function checkIfSharer() {
-            const params = new URLSearchParams(window.location.search);
-            const sessionId = params.get('session');
-            
-            if (sessionId) {
-                document.querySelector('.main-layout').parentElement.style.display = 'none';
-                document.getElementById('sharerPage').style.display = 'block';
-                document.getElementById('sharerSessionId').textContent = sessionId;
-                updateSharerStatus('info', '✅ Ready to share. Click "Start Sharing" button.');
+        // Initialize PeerJS
+        function initPeer() {
+            peer = new Peer({
+                host: 'peerjs-server.herokuapp.com',
+                secure: true,
+                port: 443,
+                path: '/'
+            });
+
+            peer.on('open', (id) => {
+                myPeerId = id;
+                document.getElementById('peerId').textContent = id;
+                console.log('Peer ID:', id);
+            });
+
+            peer.on('connection', (conn) => {
+                handleIncomingConnection(conn);
+            });
+
+            peer.on('call', (call) => {
+                handleIncomingCall(call);
+            });
+
+            peer.on('error', (err) => {
+                console.error('Peer error:', err);
+                showStatus('error', '❌ Connection error: ' + err.message);
+            });
+        }
+
+        function showStatus(type, message) {
+            const status = document.getElementById('viewerStatus');
+            status.className = `status show ${type}`;
+            status.textContent = message;
+            if (type === 'success') {
+                setTimeout(() => { status.classList.remove('show'); }, 3000);
             }
         }
 
-        function generateNewSession() {
-            currentSessionId = 'SESSION_' + Math.random().toString(36).substr(2, 9).toUpperCase();
+        function createNewSession() {
+            currentSessionId = 'SHARE_' + Math.random().toString(36).substr(2, 9).toUpperCase();
             
-            // Clear previous QR
             document.getElementById('qrCode').innerHTML = '';
+            const qrUrl = `${window.location.origin}${window.location.pathname}?session=${currentSessionId}&viewer=${myPeerId}`;
             
-            // Generate QR code
-            const qrUrl = `${window.location.origin}${window.location.pathname}?session=${currentSessionId}`;
-            console.log(qrUrl)
             new QRCode(document.getElementById('qrCode'), {
                 text: qrUrl,
                 width: 250,
@@ -406,89 +561,159 @@
                 colorLight: '#ffffff',
                 correctLevel: QRCode.CorrectLevel.H
             });
-            console.log(QRCode.text)
 
             document.getElementById('sessionId').textContent = currentSessionId;
-            updateStatus('success', '✅ New session created! Share the QR code with others.');
-            
-            // Simulate receiving screens for demo
-            setTimeout(() => {
-                simulateScreenConnection('Device 1', 'Samsung Galaxy S24');
-            }, 2000);
+            showStatus('success', '✅ New session created!');
         }
 
-        function copySessionId() {
+        function copySessionUrl() {
             if (!currentSessionId) {
-                updateStatus('error', '❌ No active session. Click "New Session" first.');
+                showStatus('error', '❌ No active session');
                 return;
             }
-            
-            const qrUrl = `${window.location.origin}${window.location.pathname}?session=${currentSessionId}`;
+            const qrUrl = `${window.location.origin}${window.location.pathname}?session=${currentSessionId}&viewer=${myPeerId}`;
             navigator.clipboard.writeText(qrUrl).then(() => {
-                updateStatus('success', '✅ QR URL copied to clipboard!');
+                showStatus('success', '✅ URL copied!');
             });
         }
 
-        function updateStatus(type, message) {
-            const status = document.getElementById('status');
-            status.className = `status ${type}`;
-            status.textContent = message;
-            status.style.display = 'block';
+        function handleIncomingConnection(conn) {
+            connectedPeers.set(conn.peer, conn);
+            updateDeviceCount();
             
-            if (type === 'success') {
-                setTimeout(() => { status.style.display = 'none'; }, 3000);
+            conn.on('data', (data) => {
+                console.log('Received data:', data);
+            });
+
+            conn.on('close', () => {
+                connectedPeers.delete(conn.peer);
+                removeScreenById(conn.peer);
+                updateDeviceCount();
+            });
+
+            conn.on('error', (err) => {
+                console.error('Connection error:', err);
+            });
+        }
+
+        function handleIncomingCall(call) {
+            call.answer();
+            
+            const peerId = call.peer;
+            const stream = call.mediaStream;
+
+            const screenDiv = document.createElement('div');
+            screenDiv.className = 'screen-item';
+            screenDiv.id = 'screen_' + peerId;
+
+            const video = document.createElement('video');
+            video.autoplay = true;
+            video.playsinline = true;
+            video.srcObject = stream;
+
+            screenDiv.appendChild(video);
+            screenDiv.innerHTML += `
+                <div class="screen-info">Device ${Object.keys(connectedPeers).indexOf(peerId) + 1}</div>
+                <div class="screen-status">🔴 Live</div>
+                <button class="screen-remove" onclick="removeScreenById('${peerId}')">✕</button>
+            `;
+
+            const container = document.getElementById('screensContainer');
+            if (container.querySelector('.empty-state')) {
+                container.innerHTML = '';
+            }
+            container.appendChild(screenDiv);
+
+            connectedPeers.set(peerId, { call: call, stream: stream });
+            updateDeviceCount();
+        }
+
+        function removeScreenById(peerId) {
+            const screen = document.getElementById('screen_' + peerId);
+            if (screen) screen.remove();
+            
+            const peer = connectedPeers.get(peerId);
+            if (peer && peer.call) {
+                peer.call.close();
+            }
+            connectedPeers.delete(peerId);
+            updateDeviceCount();
+
+            if (connectedPeers.size === 0) {
+                document.getElementById('screensContainer').innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🖥️</div>
+                        <p>No screens connected</p>
+                        <p style="font-size: 0.9em; color: #bbb;">Waiting for screens...</p>
+                    </div>
+                `;
             }
         }
 
-        function updateSharerStatus(type, message) {
-            const status = document.getElementById('sharerStatus');
-            status.className = `status ${type}`;
-            status.textContent = message;
+        function disconnectAll() {
+            connectedPeers.forEach((_, peerId) => {
+                removeScreenById(peerId);
+            });
         }
 
+        function updateDeviceCount() {
+            document.getElementById('deviceCount').textContent = connectedPeers.size;
+        }
+
+        // SHARER SIDE
         async function startScreenShare() {
             try {
-                updateSharerStatus('info', '⏳ Requesting screen access...');
-                
-                // Request screen capture
-                screenStream = await navigator.mediaDevices.getDisplayMedia({
-                    video: { 
-                        cursor: 'always',
-                        displaySurface: 'monitor'
-                    },
+                const statusBadge = document.getElementById('connectionStatus');
+                statusBadge.className = 'status-badge connecting';
+                statusBadge.innerHTML = '<span class="loading-spinner"></span>Requesting screen...';
+
+                const stream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { cursor: 'always' },
                     audio: false
                 });
 
+                currentScreen = stream;
+                
                 const video = document.getElementById('sharerVideo');
-                video.srcObject = screenStream;
+                video.srcObject = stream;
                 
                 document.getElementById('sharerVideoContainer').style.display = 'block';
                 document.getElementById('shareScreenBtn').style.display = 'none';
-                
-                updateSharerStatus('success', '✅ Screen sharing active! Your screen is being transmitted.');
 
-                // Handle stop event
-                screenStream.getTracks()[0].onended = () => {
+                statusBadge.className = 'status-badge connected';
+                statusBadge.textContent = '✅ Screen sharing active!';
+
+                // Call viewer with screen stream
+                const viewerId = getViewerIdFromUrl();
+                if (viewerId && peer) {
+                    const call = peer.call(viewerId, stream);
+                    call.on('close', () => {
+                        stopScreenShare();
+                    });
+                }
+
+                stream.getTracks()[0].onended = () => {
                     stopScreenShare();
                 };
 
             } catch (error) {
-                if (error.name === 'NotAllowedError') {
-                    updateSharerStatus('error', '❌ Screen sharing permission denied.');
-                } else {
-                    updateSharerStatus('error', '❌ Error: ' + error.message);
-                }
+                const statusBadge = document.getElementById('connectionStatus');
+                statusBadge.className = 'status-badge error';
+                statusBadge.textContent = '❌ ' + error.message;
             }
         }
 
         function stopScreenShare() {
-            if (screenStream) {
-                screenStream.getTracks().forEach(track => track.stop());
+            if (currentScreen) {
+                currentScreen.getTracks().forEach(track => track.stop());
             }
             
             document.getElementById('sharerVideoContainer').style.display = 'none';
             document.getElementById('shareScreenBtn').style.display = 'block';
-            updateSharerStatus('info', '⏹️ Screen sharing stopped.');
+            
+            const statusBadge = document.getElementById('connectionStatus');
+            statusBadge.className = 'status-badge';
+            statusBadge.textContent = 'Connection closed';
         }
 
         function goBackToQR() {
@@ -496,78 +721,34 @@
             window.location.href = window.location.pathname;
         }
 
-        // Simulate receiving screen connections
-        function simulateScreenConnection(deviceName, deviceModel) {
-            const id = 'screen_' + Math.random().toString(36).substr(2, 9);
+        function getViewerIdFromUrl() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('viewer');
+        }
+
+        function checkIfSharer() {
+            const params = new URLSearchParams(window.location.search);
+            const sessionId = params.get('session');
+            const viewerId = params.get('viewer');
             
-            const screenDiv = document.createElement('div');
-            screenDiv.className = 'screen-item';
-            screenDiv.id = id;
-            screenDiv.innerHTML = `
-                <div style="width: 100%; height: 100%; background: linear-gradient(45deg, #667eea, #764ba2); display: flex; align-items: center; justify-content: center; color: white; text-align: center;">
-                    <div>
-                        <div style="font-size: 3em; margin-bottom: 10px;">📱</div>
-                        <div><strong>${deviceModel}</strong></div>
-                        <div style="font-size: 0.9em; opacity: 0.8;">Screen Sharing Active</div>
-                    </div>
-                </div>
-                <div class="screen-info">${deviceName}</div>
-                <button class="screen-remove" onclick="removeScreen('${id}')">✕ Remove</button>
-            `;
-            
-            const container = document.getElementById('screensContainer');
-            if (container.querySelector('.empty-state')) {
-                container.innerHTML = '';
+            if (sessionId && viewerId) {
+                isSharer = true;
+                document.getElementById('viewerPage').style.display = 'none';
+                document.getElementById('sharerPage').style.display = 'block';
+                document.getElementById('sharerViewerId').textContent = viewerId;
+                document.getElementById('sharerStatus').textContent = '📱 Ready to share your screen!';
             }
-            
-            container.appendChild(screenDiv);
-            connectedScreens.set(id, { name: deviceName, model: deviceModel });
-            updateDeviceCount();
-        }
-
-        function removeScreen(screenId) {
-            const screen = document.getElementById(screenId);
-            if (screen) {
-                screen.remove();
-                connectedScreens.delete(screenId);
-                updateDeviceCount();
-                
-                if (connectedScreens.size === 0) {
-                    document.getElementById('screensContainer').innerHTML = `
-                        <div class="empty-state">
-                            <div class="empty-state-icon">🖥️</div>
-                            <p>No screens connected yet</p>
-                            <p style="font-size: 0.9em; color: #bbb;">Waiting for devices to scan and share...</p>
-                        </div>
-                    `;
-                }
-            }
-        }
-
-        function clearAllScreens() {
-            connectedScreens.forEach((_, id) => {
-                const screen = document.getElementById(id);
-                if (screen) screen.remove();
-            });
-            connectedScreens.clear();
-            updateDeviceCount();
-            
-            document.getElementById('screensContainer').innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-state-icon">🖥️</div>
-                    <p>No screens connected yet</p>
-                    <p style="font-size: 0.9em; color: #bbb;">Waiting for devices to scan and share...</p>
-                </div>
-            `;
-        }
-
-        function updateDeviceCount() {
-            document.getElementById('deviceCount').textContent = connectedScreens.size;
         }
 
         // Initialize
         window.addEventListener('load', () => {
-            checkIfSharer();
+            initPeer();
+            setTimeout(() => {
+                checkIfSharer();
+                if (!isSharer) {
+                    createNewSession();
+                }
+            }, 500);
         });
     </script>
 </body>
