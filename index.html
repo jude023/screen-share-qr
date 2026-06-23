@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Screen Share via QR - WebRTC v2</title>
+    <title>Screen Share via QR - WebRTC</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/peerjs@1.4.1/dist/peerjs.min.js"></script>
     <style>
@@ -413,7 +413,7 @@
         <div class="container">
             <div class="header">
                 <h1>📱 Screen Share via QR</h1>
-                <p>Real WebRTC P2P screen sharing</p>
+                <p>Real WebRTC P2P screen sharing v2.1</p>
             </div>
 
             <div class="main-layout">
@@ -422,7 +422,7 @@
                     <h2>🔐 Your Session</h2>
                     
                     <div class="button-group">
-                        <button class="btn-primary" onclick="createNewSession()">🆕 New Session</button>
+                        <button class="btn-primary" id="newSessionBtn" onclick="createNewSession()" disabled style="opacity: 0.6; cursor: not-allowed;">🆕 New Session (loading...)</button>
                         <button class="btn-secondary" onclick="copySessionUrl()">📋 Copy URL</button>
                     </div>
 
@@ -508,20 +508,24 @@
         let connectedPeers = new Map();
         let isSharer = false;
         let currentScreen = null;
+        let peerReady = false;
 
         // Initialize PeerJS
         function initPeer() {
-            peer = new Peer({
-                host: 'peerjs-server.herokuapp.com',
-                secure: true,
-                port: 443,
-                path: '/'
-            });
+            peer = new Peer();
 
             peer.on('open', (id) => {
                 myPeerId = id;
+                peerReady = true;
                 document.getElementById('peerId').textContent = id;
-                console.log('Peer ID:', id);
+                const btn = document.getElementById('newSessionBtn');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                    btn.style.cursor = 'pointer';
+                    btn.textContent = '🆕 New Session';
+                }
+                console.log('Peer ID ready:', id);
             });
 
             peer.on('connection', (conn) => {
@@ -548,6 +552,12 @@
         }
 
         function createNewSession() {
+            if (!peerReady || !myPeerId) {
+                showStatus('warning', '⏳ Peer ID loading... please wait a moment');
+                setTimeout(() => createNewSession(), 1000);
+                return;
+            }
+
             currentSessionId = 'SHARE_' + Math.random().toString(36).substr(2, 9).toUpperCase();
             
             document.getElementById('qrCode').innerHTML = '';
